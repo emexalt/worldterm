@@ -1247,9 +1247,10 @@ Most serious first. Items 1 to 4 were reproduced with scripts against the code o
    `pyproject.toml` accepts any Textual from 2.1 on. A fresh `pip install` would
    therefore take the newest release, which has never been tested with this code.
 
-6. **Network etiquette.** `feed.USER_AGENT` names a GitHub URL. Confirm it exists, or
-   replace it with a contact address, before distributing the program: the NWS asks API
-   clients to identify themselves this way. The default `--weather us` downloads the whole
+6. **Network etiquette.** `feed.USER_AGENT` names the project's repository,
+   `https://github.com/emexalt/worldterm`, as the NWS asks API clients to identify
+   themselves; keep it pointing somewhere that reaches a person if the repository moves,
+   or switch it to a contact address. The default `--weather us` downloads the whole
    national alert set, about 2.5 MB on 2026-10-10, at every refresh. A separate, longer
    weather interval or a narrower default area would be kinder.
 

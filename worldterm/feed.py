@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 
-USER_AGENT = "worldterm/0.1 (+https://github.com/emmeryn/worldterm)"
+USER_AGENT = "worldterm/0.1 (+https://github.com/emexalt/worldterm)"
 ATOM_NS = "http://www.w3.org/2005/Atom"
 CONTENT_NS = "http://purl.org/rss/1.0/modules/content/"
 DC_NS = "http://purl.org/dc/elements/1.1/"

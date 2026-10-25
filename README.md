@@ -348,3 +348,7 @@ Extreme level is exercised). `tests/test_cyd.py` and `tests/test_serialport.py` 
 CYD display with a scripted fake board and a pseudo-terminal; no test opens a real serial
 port, so the suite can run with the board plugged in. `tests/test_wall.py` covers the wall
 page's snapshot and server on a loopback port chosen by the kernel.
+
+## License
+
+MIT licensed; see [LICENSE](LICENSE).
