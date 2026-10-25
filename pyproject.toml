@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "worldterm"
+version = "0.1.0"
+description = "Netcool-style terminal event console for RSS news feeds (Textual)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["textual>=2.1"]
+
+[project.scripts]
+worldterm = "main:main"
+
+[tool.setuptools]
+packages = ["worldterm", "worldterm.ui"]
+py-modules = ["main"]
+
+[tool.setuptools.package-data]
+worldterm = ["wall.html"]

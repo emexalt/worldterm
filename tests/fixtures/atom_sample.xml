@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Example Atom Wire</title>
+  <link href="https://example.org/"/>
+  <updated>2026-10-09T12:00:00Z</updated>
+  <id>urn:uuid:60a76c80-d399-11d9-b93C-0003939e0af6</id>
+  <entry>
+    <title>Earthquake strikes coastal region, dozens killed</title>
+    <link rel="alternate" href="https://example.org/news/quake"/>
+    <link rel="enclosure" href="https://example.org/news/quake.jpg"/>
+    <id>urn:uuid:1225c695-cfb8-4ebb-aaaa-80da344efa6a</id>
+    <updated>2026-10-09T11:30:00Z</updated>
+    <published>2026-10-09T11:00:00+01:00</published>
+    <category term="World"/>
+    <summary type="html">&lt;p&gt;A magnitude &lt;b&gt;7.1&lt;/b&gt; quake hit at dawn.&lt;/p&gt;</summary>
+  </entry>
+  <entry>
+    <title>Analysis: Why the central bank is holding rates</title>
+    <link href="https://example.org/news/rates"/>
+    <id>urn:uuid:2225c695-cfb8-4ebb-aaaa-80da344efa6a</id>
+    <updated>2026-10-09T10:00:00Z</updated>
+    <content type="text">Inflation remains sticky, economists say.</content>
+  </entry>
+  <entry>
+    <title>Local museum reopens after refurbishment</title>
+    <id>urn:uuid:3225c695-cfb8-4ebb-aaaa-80da344efa6a</id>
+    <updated>not-a-date</updated>
+  </entry>
+</feed>

@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:npr="https://www.npr.org/rss/" xmlns:nprml="https://api.npr.org/nprml" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:media="http://search.yahoo.com/mrss/" version="2.0">
+  <channel>
+    <title>NPR Topics: News</title>
+    <link>https://www.npr.org/templates/story/story.php?storyId=1001</link>
+    <description>NPR news, audio, and podcasts. Coverage of breaking stories, national and world news, politics, business, science, technology, and extended coverage of major national and world events.</description>
+    <language>en</language>
+    <copyright>Copyright 2024 NPR - For Personal Use Only</copyright>
+    <generator>Story API Shim 1.2.24</generator>
+    <lastBuildDate>Fri, 09 Oct 2026 23:21:38 -0400</lastBuildDate>
+    <image>
+      <url>https://media.npr.org/images/podcasts/primary/npr_generic_image_300.jpg?s=200</url>
+      <title>NPR Topics: News</title>
+      <link>https://www.npr.org/sections/news/</link>
+    </image>
+    <item>
+      <title>Kalshi taps former FBI agent to fight against money laundering</title>
+      <description>The prediction market company says it wants to prevent its platform from being abused by criminals. The company is facing mounting pressure over market manipulation and insider trading on the site.</description>
+      <pubDate>Fri, 09 Oct 2026 18:23:11 -0400</pubDate>
+      <link>https://www.npr.org/2026/10/09/nx-s1-5996683/kalshi-fbi-sean-fern-money-laundering</link>
+      <guid>https://www.npr.org/2026/10/09/nx-s1-5996683/kalshi-fbi-sean-fern-money-laundering</guid>
+      <content:encoded><![CDATA[<img src='https://npr.brightspotcdn.com/dims3/default/strip/false/crop/1920x1945+0+0/resize/1920x1945!/?url=http%3A%2F%2Fnpr-brightspot.s3.amazonaws.com%2F9a%2F1c%2Fdb89fe814ef380a180ae4dfac20a%2Fsean-fern-photo.jpg' alt='Sean Fern, a former FBI agent, is joining the prediction market platform Kalshi to lead the company's efforts in fighting money laundering.'/><p>The prediction market company says it wants to prevent its platform from being abused by criminals. The company is facing mounting pressure over market manipulation and insider trading on the site.</p><p>(Image credit: Provided by Kalshi)</p><img src='https://media.npr.org/include/images/tracking/npr-rss-pixel.png?story=nx-s1-5996683' />]]></content:encoded>
+      <dc:creator>Bobby Allyn</dc:creator>
+    </item>
+    <item>
+      <title>Fired OpenAI employees question the company&apos;s commitment to safety</title>
+      <description>The three fired workers say OpenAI punished them for being outspoken about safety. The company disputes the claims and says they were fired over mishandling sensitive information.</description>
+      <pubDate>Fri, 09 Oct 2026 17:28:09 -0400</pubDate>
+      <link>https://www.npr.org/2026/10/09/nx-s1-5996890/openai-safety-firings</link>
+      <guid>https://www.npr.org/2026/10/09/nx-s1-5996890/openai-safety-firings</guid>
+      <content:encoded><![CDATA[<img src='https://npr.brightspotcdn.com/dims3/default/strip/false/crop/8256x5504+0+0/resize/8256x5504!/?url=http%3A%2F%2Fnpr-brightspot.s3.amazonaws.com%2F4d%2Fab%2F353f227b4ed395e0c6390444a5a6%2Fgettyimages-2295203915.jpg' alt='Three employees recently fired by OpenAI allege the company punished them for being outspoken about safety. OpenAI disputes the claims and says they were dismissed for mishandling sensitive information.'/><p>The three fired workers say OpenAI punished them for being outspoken about safety. The company disputes the claims and says they were fired over mishandling sensitive information.</p><p>(Image credit: Andrej Ivanov)</p><img src='https://media.npr.org/include/images/tracking/npr-rss-pixel.png?story=nx-s1-5996890' />]]></content:encoded>
+      <dc:creator>Huo Jingnan</dc:creator>
+    </item>
+    <item>
+      <title>Trump says U.S. to get diesel from Russia, relaxing pressure on Moscow to ease prices before midterms</title>
+      <description>Trump says the U.S. will obtain diesel from Russia, relaxing years of U.S. pressure on Moscow, to combat prices before midterms. He said he struck the deal with Russian President Vladimir Putin in a phone call.</description>
+      <pubDate>Fri, 09 Oct 2026 17:24:13 -0400</pubDate>
+      <link>https://www.npr.org/2026/10/09/nx-s1-5996912/trump-says-u-s-to-get-diesel-from-russia-relaxing-pressure-on-moscow-to-ease-prices-before-midterms</link>
+      <guid>https://www.npr.org/2026/10/09/nx-s1-5996912/trump-says-u-s-to-get-diesel-from-russia-relaxing-pressure-on-moscow-to-ease-prices-before-midterms</guid>
+      <content:encoded><![CDATA[<img src='https://npr.brightspotcdn.com/dims3/default/strip/false/crop/8640x5760+0+0/resize/8640x5760!/?url=http%3A%2F%2Fnpr-brightspot.s3.amazonaws.com%2F1b%2Ff7%2Fba5e41fe4a0eb0f617a90d2e222c%2Fap26274756029238.jpg' alt='The price of a gallon of diesel fuel is shown electronically on a pump at a QuikTrip station Thursday, Oct. 1, 2026, in Greenwood Village, Colo.'/><p>Trump says the U.S. will obtain diesel from Russia, relaxing years of U.S. pressure on Moscow, to combat prices before midterms. He said he struck the deal with Russian President Vladimir Putin in a phone call.</p><p>(Image credit: David Zalubowski)</p><img src='https://media.npr.org/include/images/tracking/npr-rss-pixel.png?story=nx-s1-5996912' />]]></content:encoded>
+      <dc:creator>The Associated Press</dc:creator>
+    </item>
+    <item>
+      <title>The U.S. last held a public execution in the 1930s. The Pentagon wants to change that</title>
+      <description>The Pentagon says it will livestream the firing squad execution of Nidal Hasan at Fort Hood, the site of his 2009 mass shooting. That would be the first public execution in the U.S. since the 1930s.</description>
+      <pubDate>Fri, 09 Oct 2026 14:55:38 -0400</pubDate>
+      <link>https://www.npr.org/2026/10/09/nx-s1-5996529/firing-squad-livestream-execution-fort-hood-shooter</link>
+      <guid>https://www.npr.org/2026/10/09/nx-s1-5996529/firing-squad-livestream-execution-fort-hood-shooter</guid>
+      <content:encoded><![CDATA[<img src='https://npr.brightspotcdn.com/dims3/default/strip/false/crop/3000x2424+0+0/resize/3000x2424!/?url=http%3A%2F%2Fnpr-brightspot.s3.amazonaws.com%2Fdf%2Ff8%2F534d592e4c20a62c07112b8cc7a6%2Fgettyimages-808644.jpg' alt='A huge crowd gathers to witness the public hanging of Rainey Bethea in 1936 in Owensboro, Kentucky. Public outrage over the spectacle made Bethea's death the last high-profile public execution in the United States. The Pentagon wants to livestream the firing squad execution of the Fort Hood shooter.'/><p>The Pentagon says it will livestream the firing squad execution of Nidal Hasan at Fort Hood, the site of his 2009 mass shooting. That would be the first public execution in the U.S. since the 1930s.</p><p>(Image credit: Getty Images)</p><img src='https://media.npr.org/include/images/tracking/npr-rss-pixel.png?story=nx-s1-5996529' />]]></content:encoded>
+      <dc:creator>Rachel Treisman</dc:creator>
+    </item>
+    <item>
+      <title>U.S. working to reverse an Egyptian man&apos;s third-country deportation to Africa</title>
+      <description>The Trump administration&apos;s effort to return Ahmed Soliman to the U.S. come after an Arizona judge said his deportation violated due process.</description>
+      <pubDate>Fri, 09 Oct 2026 13:49:28 -0400</pubDate>
+      <link>https://www.npr.org/2026/10/09/g-s1-147476/trump-third-country-deportation-africa-reverse</link>
+      <guid>https://www.npr.org/2026/10/09/g-s1-147476/trump-third-country-deportation-africa-reverse</guid>
+      <content:encoded><![CDATA[<img src='https://npr.brightspotcdn.com/dims3/default/strip/false/crop/3600x2260+0+0/resize/3600x2260!/?url=http%3A%2F%2Fnpr-brightspot.s3.amazonaws.com%2F78%2F76%2Ffedb4c01483190601424b3f5f19e%2Fgettyimages-2250389212.jpg' alt='A detainee boards a deportation flight on GlobalX Air in Minnesota in December 2025.'/><p>The Trump administration's effort to return Ahmed Soliman to the U.S. come after an Arizona judge said his deportation violated due process.</p><p>(Image credit: Photo by Elizabeth Flores)</p><img src='https://media.npr.org/include/images/tracking/npr-rss-pixel.png?story=g-s1-147476' />]]></content:encoded>
+      <dc:creator>Nate Perez</dc:creator>
+    </item>
+    <item>
+      <title>Did Russia play by the rules in reporting lab worker&apos;s death?</title>
+      <description>A global treaty signed by 197 countries — including Russia — requires reporting any death that could be a sign of an outbreak to come. </description>
+      <pubDate>Fri, 09 Oct 2026 12:43:45 -0400</pubDate>
+      <link>https://www.npr.org/2026/10/09/g-s1-147295/russia-lab-death-pneumonia-plague</link>
+      <guid>https://www.npr.org/2026/10/09/g-s1-147295/russia-lab-death-pneumonia-plague</guid>
+      <content:encoded><![CDATA[<img src='https://npr.brightspotcdn.com/dims3/default/strip/false/crop/8192x5464+0+0/resize/8192x5464!/?url=http%3A%2F%2Fnpr-brightspot.s3.amazonaws.com%2F6e%2F2a%2F3ddd11034463ac7c7879271335f8%2Frussia-plague-2298434595.jpg' alt='A woman wearing a face mask walks past the Irkutsk Anti-Plague Research Institute of Siberia and the Far East, founded in the 1930s to monitor strains of dangerous pathogens.'/><p>A global treaty signed by 197 countries — including Russia — requires reporting any death that could be a sign of an outbreak to come. </p><p>(Image credit: Tatyana Makeyeva/AFP)</p><img src='https://media.npr.org/include/images/tracking/npr-rss-pixel.png?story=g-s1-147295' />]]></content:encoded>
+      <dc:creator>Gabrielle Emanuel</dc:creator>
+    </item>
+    <item>
+      <title>How the oil industry is preparing for Hurricane Isaias</title>
+      <description>Hurricane Isaias is this season&apos;s first Atlantic hurricane, and is on a path to hit the northern Gulf Coast. How is the oil industry preparing?</description>
+      <pubDate>Fri, 09 Oct 2026 12:03:32 -0400</pubDate>
+      <link>https://www.npr.org/2026/10/09/nx-s1-5995417/hurricane-isaias-oil-refineries-diesel-gasoline-prices</link>
+      <guid>https://www.npr.org/2026/10/09/nx-s1-5995417/hurricane-isaias-oil-refineries-diesel-gasoline-prices</guid>
+      <content:encoded><![CDATA[<img src='https://npr.brightspotcdn.com/dims3/default/strip/false/crop/8256x5504+0+0/resize/8256x5504!/?url=http%3A%2F%2Fnpr-brightspot.s3.amazonaws.com%2Fe0%2Fc1%2Fe80e7e06427d888749e4131db8a2%2Fgettyimages-2298728974.jpg' alt='People watch as waves build near the Pensacola Beach Gulf Pier in Pensacola Beach, Florida, on October 9, 2026, as Hurricane Isaias continues moving north toward the Florida Panhandle.'/><p>Hurricane Isaias is this season's first Atlantic hurricane, and is on a path to hit the northern Gulf Coast. How is the oil industry preparing?</p><p>(Image credit: RONALDO SCHEMIDT)</p><img src='https://media.npr.org/include/images/tracking/npr-rss-pixel.png?story=nx-s1-5995417' />]]></content:encoded>
+      <dc:creator>Willa Rubin</dc:creator>
+    </item>
+    <item>
+      <title>Trump says U.S. won&apos;t attack Iran before midterms. And, ICE agent shoots man in NYC</title>
+      <description>Trump announced that the U.S. will not attack Iran ahead of the midterms. And, a 28-year-old man is receiving treatment at the hospital after an ICE agent shot him in the neck.</description>
+      <pubDate>Fri, 09 Oct 2026 07:37:04 -0400</pubDate>
+      <link>https://www.npr.org/2026/10/09/g-s1-147455/up-first-newsletter-hurricane-isaias-ukraine-russia-trump-iran-ice-shooting</link>
+      <guid>https://www.npr.org/2026/10/09/g-s1-147455/up-first-newsletter-hurricane-isaias-ukraine-russia-trump-iran-ice-shooting</guid>
+      <content:encoded><![CDATA[<img src='undefined' alt='President Trump looks on during the "Golden Age of American Innovation Summit" at the Institute of Peace in Washington, D.C., on Oct. 8, 2026.'/><p>Trump announced that the U.S. will not attack Iran ahead of the midterms. And, a 28-year-old man is receiving treatment at the hospital after an ICE agent shot him in the neck.</p><p>(Image credit: Kent Nishimura)</p><img src='https://media.npr.org/include/images/tracking/npr-rss-pixel.png?story=g-s1-147455' />]]></content:encoded>
+      <dc:creator>Brittney Melton</dc:creator>
+    </item>
+    <item>
+      <title>Why American investors love European defense startups</title>
+      <description>As European defense spending takes off, just about half of the funding in Europe&apos;s defense tech industry is coming from American investors this year. One reason why: European investment firms have restrictions on how they can invest.</description>
+      <pubDate>Fri, 09 Oct 2026 07:00:00 -0400</pubDate>
+      <link>https://www.npr.org/sections/planet-money/2026/10/09/nx-s1-5995606/why-american-investors-love-european-defense-startups</link>
+      <guid>https://www.npr.org/sections/planet-money/2026/10/09/nx-s1-5995606/why-american-investors-love-european-defense-startups</guid>
+      <content:encoded><![CDATA[<img src='undefined' alt='A Ukrainian air defense soldier gets ready to repel Russia's drone attack in Kyiv, Ukraine, Saturday evening, Sept. 19, 2026.'/><p>As European defense spending takes off, just about half of the funding in Europe's defense tech industry is coming from American investors this year. One reason why: European investment firms have restrictions on how they can invest.</p><p>(Image credit: Efrem Lukatsky/AP Photo/Efrem Lukatsky)</p><img src='https://media.npr.org/include/images/tracking/npr-rss-pixel.png?story=nx-s1-5995606' />]]></content:encoded>
+      <dc:creator>Cooper Katz McKim</dc:creator>
+    </item>
+    <item>
+      <title>Republican congressman tries to outrun a potential blue wave in New York toss-up seat</title>
+      <description>Rep. Mike Lawler, R-NY, is in a tight race for re-election in a toss-up district that could help determine control of Congress in November.</description>
+      <pubDate>Fri, 09 Oct 2026 05:00:00 -0400</pubDate>
+      <link>https://www.npr.org/2026/10/09/nx-s1-5986150/lawler-new-york-congress-trump</link>
+      <guid>https://www.npr.org/2026/10/09/nx-s1-5986150/lawler-new-york-congress-trump</guid>
+      <content:encoded><![CDATA[<img src='https://npr.brightspotcdn.com/dims3/default/strip/false/crop/6000x4000+0+0/resize/6000x4000!/?url=http%3A%2F%2Fnpr-brightspot.s3.amazonaws.com%2Fa4%2Fb4%2F6a08bef64d2fa169694356e281d0%2Fgettyimages-2298899263.jpg' alt='Rep. Mike Lawler, R-NY, speaks during a press conference in Chappaqua, New York. Lawler is running in a tight race in a toss-up district that could help determine control of Congress.'/><p>Rep. Mike Lawler, R-NY, is in a tight race for re-election in a toss-up district that could help determine control of Congress in November.</p><p>(Image credit: Michael M. Santiago)</p><img src='https://media.npr.org/include/images/tracking/npr-rss-pixel.png?story=nx-s1-5986150' />]]></content:encoded>
+      <dc:creator>Elena Moore</dc:creator>
+    </item>
+  </channel>
+</rss>
