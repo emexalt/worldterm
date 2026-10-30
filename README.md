@@ -10,7 +10,8 @@ headlines on a [desk display](#cyd-display) plugged in over USB, and serves a re
 [wall dashboard](#wall-dashboard) for a big screen or projector.
 
 Built on [Textual](https://textual.textualize.io/). The feed parser, classifier, state store,
-the desk display's serial link and the wall page's web server are pure standard library.
+the article extractor, the desk display's serial link and the wall page's web server are pure
+standard library.
 
 Maintainers: the architecture, data flow, extension recipes and known issues are described in
 [docs/DESIGN.md](docs/DESIGN.md).
@@ -40,6 +41,7 @@ python3 main.py --weather MA,RI,CT       # NWS alerts for these states only (def
 python3 main.py --weather off            # no weather screen
 python3 main.py --cyd off                # never look for a Cheap Yellow Display (default: auto)
 python3 main.py --cyd /dev/ttyUSB1       # the display is on this port
+python3 main.py --cyd ble:A4:F0:0F:5B:8B:2A   # the display, over Bluetooth LE
 python3 main.py --wall off               # no wall dashboard page (default: http://<this host>:8070/)
 python3 main.py --wall 127.0.0.1:9000    # serve the wall page to this machine only
 ```
@@ -85,7 +87,7 @@ Otherwise the feed's own title is used.
 | `Ctrl+A`          | select every visible row (press again to deselect all) |
 | `Esc`             | clear the selection                                |
 | **Ctrl+click** / **Shift+click** | toggle one row / select a range from the cursor |
-| `r`               | read the article (summary, metadata, link)         |
+| `r`               | read the article: its full text, fetched from the link, with metadata |
 | `n`               | create or edit the note for this article           |
 | `o`               | open the article link in your browser              |
 | `R`               | refresh feeds now                                  |
@@ -113,6 +115,34 @@ are dropped from the selection, so a batch never touches events you can't see.
 
 Some terminals reserve Shift+click for their own text selection. Use `Shift+↑`/`↓`
 there.
+
+## Reading articles
+
+`r` (or **Read** in the menu) shows the article itself, not just the feed's one-line
+summary. Feeds don't carry the text, so when you open the reader worldterm fetches the
+article's page and picks out the body: its paragraphs, subheadings, lists and quotes, without
+the menus, captions, related links and adverts around them. The summary shows while the page
+loads, usually for under a second, and the **Article** line says what came from where:
+
+```
+ Link:      https://www.bbc.co.uk/news/articles/…
+ Article:   1,036 words from www.bbc.co.uk, extracted from the page (o opens the original)
+```
+
+- Some pages have no article to find: videos, live pages and audio stories. The reader then
+  keeps the summary and says why, as it does when a site can't be reached
+  (`unavailable (HTTP 403)`). `o` opens the original in your browser.
+- Behind a paywall the text stops where the free part ends. A site's own lines inside an
+  article, such as a newsletter plug, are kept.
+- A page is fetched only when you open its reader, and once per session: reopening it is
+  instant. Nothing is saved to disk. Opening the reader tells the news site you read the
+  article, as a browser would; worldterm sends the same User-Agent as for the feeds, and runs
+  no scripts and loads no images, adverts or trackers.
+- Weather alerts are unchanged: their reader already shows the whole alert.
+
+On 2026-10-29 this gave the full text from BBC, NPR, PBS, ABC (US and Australia), CBS, CS
+Monitor, DW, RFI, Euronews, Al Jazeera, UN News, CNBC and SCMP, and the first paragraphs from
+the Japan Times. Most of France 24's feed is videos.
 
 ## Weather alerts
 
@@ -210,7 +240,7 @@ plain Python over the event store, so they can be reused outside the UI.
 ## CYD display
 
 worldterm can drive a "Cheap Yellow Display" (an ESP32-2432S028 board with a 320x240 LCD,
-running MicroPython) over USB as a desk display: **today's unacknowledged Critical
+running MicroPython) over USB or Bluetooth LE as a desk display: **today's unacknowledged Critical
 headlines**, news and weather alike, one at a time, eight seconds each, with the board's
 LED red while one is on screen. Acknowledging a headline in worldterm takes it off the
 display within a second; undoing the acknowledgment brings it back. When there is nothing
@@ -232,8 +262,23 @@ pull it out and the chip dims and worldterm carries on as before. `--cyd /dev/tt
 names the port instead, and `--cyd off` never opens a serial port. Finding the board uses
 `/sys`, so it works on Linux only.
 
-Deploying the display program to the board, sharing the port with mpremote, permissions
-and the wire protocol are described in [cyd/README.md](cyd/README.md).
+Without a cable, `--cyd ble:A4:F0:0F:5B:8B:2A` reaches the board over Bluetooth LE, at the
+address it shows on its screen while it waits for worldterm; the default `--cyd auto` looks
+on USB only. That needs Linux and Python 3.14 or newer, and nothing else. Do not pair the
+board in the desktop's Bluetooth settings: the desktop then stays connected to it and
+worldterm cannot get in (it tells you so; `bluetoothctl disconnect` frees it). The board also shows text messages, which you can send
+from this computer while worldterm is not connected to it over Bluetooth:
+
+```sh
+python3 -m worldterm.bleport A4:F0:0F:5B:8B:2A "Back in five minutes"
+```
+
+Anyone within Bluetooth range can do the same: the board takes connections from anyone and
+has no pairing. A phone app that speaks the Nordic UART Service (nRF Connect, Bluefruit
+Connect) works too.
+
+Deploying the display program to the board, Bluetooth, sharing the port with mpremote,
+permissions and the wire protocol are described in [cyd/README.md](cyd/README.md).
 
 ## Wall dashboard
 
@@ -345,9 +390,12 @@ note editor, weather screen, both dashboard pages) via `App.run_test()`; the res
 feed and alert parsing, classification, aggregation and state. `tests/fixtures/nws_sample.json`
 is a trimmed capture of the live alerts API (one Tornado Warning in it is synthetic, so the
 Extreme level is exercised). `tests/test_cyd.py` and `tests/test_serialport.py` cover the
-CYD display with a scripted fake board and a pseudo-terminal; no test opens a real serial
-port, so the suite can run with the board plugged in. `tests/test_wall.py` covers the wall
-page's snapshot and server on a loopback port chosen by the kernel.
+CYD display with a scripted fake board and a pseudo-terminal, and `tests/test_bleport.py`
+its Bluetooth link with a fake board on a socket pair; no test opens a real serial
+port or uses the radio, so the suite can run with the board plugged in. `tests/test_wall.py` covers the wall
+page's snapshot and server on a loopback port chosen by the kernel. `tests/test_article.py`
+covers finding an article's text, against small pages in `tests/fixtures/articles/` that
+copy the structure of real news sites; no test fetches a real page.
 
 ## License
 

@@ -5,11 +5,14 @@ each frame, and shows a notice when the host goes quiet. Everything else happens
 choosing the headlines, wrapping them into 40-column frames, cycling through them,
 finding the board when it is plugged in and letting go when it is pulled.
 
+The board is reached over USB serial (`serialport`) or Bluetooth LE (`bleport`); both carry
+the same lines, so the service only differs in a few timings per transport.
+
 `CydService` runs on a worker thread. The UI thread hands it `Headline` snapshots through
 `update()` and hears back through the `on_connect`, `on_disconnect` and `on_error`
 callbacks, which are called on the worker thread.
 
-Wire protocol, newline-delimited ASCII at 115200 baud (`cyd/README.md` has the details):
+Wire protocol, newline-delimited ASCII (`cyd/README.md` has the details):
 
     host -> board                        board -> host
     PING                                 PONG worldterm-cyd 1        reply; "1" is the protocol version
@@ -55,6 +58,7 @@ WRITE_CHUNK = 64          # the board's input buffer is about 256 bytes and it r
 WRITE_GAP = 0.02
 RX_LIMIT = 4096           # a line longer than this (the REPL prompt has no newline) is dropped
 REPL_RESCUE = True        # soft-reset a board found sitting at its REPL, so main.py runs again
+BLE_RESCAN_SECONDS = 10.0  # a connect attempt keeps the radio busy, so a missing BLE board is tried less often
 
 NOT_DISPLAYABLE = "(headline not displayable in ASCII)"
 
@@ -222,7 +226,8 @@ def parse_line(line: bytes) -> tuple:
 
 # ---------------------------------------------------------------------------- transport seam
 class Port(Protocol):
-    """What the service needs from a serial port. `serialport.SerialPort` and the tests' fake both fit."""
+    """What the service needs from a link to the board. `serialport.SerialPort`, `bleport.BlePort`
+    and the tests' fake all fit."""
 
     def read(self, max_bytes: int = 4096, timeout: float = READ_TIMEOUT) -> bytes: ...
     def write(self, data: bytes, timeout: float = 1.0) -> None: ...
@@ -233,8 +238,15 @@ Scanner = Callable[[], list[str]]      # candidate port paths right now
 OpenPort = Callable[[str], Port]       # raises OSError when the port cannot be opened
 
 
-def unavailable_reason() -> str | None:
-    """Why there can be no CYD on this host, or None."""
+def unavailable_reason(mode: str = "auto") -> str | None:
+    """Why there can be no CYD on this host for `--cyd` *mode*, or None."""
+    if mode.startswith("ble:"):
+        from . import bleport
+        try:
+            bleport.parse_address(mode[4:])
+        except ValueError as exc:
+            return str(exc)
+        return bleport.unavailable_reason()
     try:
         from . import serialport  # noqa: F401
     except ImportError as exc:
@@ -243,9 +255,20 @@ def unavailable_reason() -> str | None:
 
 
 def service_for(mode: str) -> CydService | None:
-    """A service for `--cyd` *mode*: "off", "auto", or a port path (which need not exist yet)."""
-    if mode == "off" or unavailable_reason():
+    """A service for `--cyd` *mode*: "off", "auto", a port path (which need not exist yet), or
+    "ble:ADDRESS" for a board reached over Bluetooth LE."""
+    if mode == "off" or unavailable_reason(mode):
         return None
+    if mode.startswith("ble:"):
+        from . import bleport
+        address = bleport.parse_address(mode[4:])
+        stop = threading.Event()
+        # A BLE board never greets on connect (only a reboot over USB does), the link has
+        # its own flow control, and the connect itself watches the stop flag.
+        return CydService(lambda: [f"ble:{address}"],
+                          lambda _path: bleport.BlePort(address, cancelled=stop.is_set),
+                          hello_wait=0.0, write_chunk=1 << 16, write_gap=0.0,
+                          rescan_seconds=BLE_RESCAN_SECONDS, stop=stop)
     from . import serialport
     scanner: Scanner = serialport.find_ports if mode == "auto" else (lambda: [mode])
     return CydService(scanner, serialport.SerialPort)
@@ -264,12 +287,18 @@ class CydService:
                  clock: Callable[[], datetime] = lambda: datetime.now().astimezone(),
                  monotonic: Callable[[], float] = time.monotonic,
                  sleep: Callable[[float], None] | None = None,
-                 cycle_seconds: float = CYCLE_SECONDS) -> None:
+                 cycle_seconds: float = CYCLE_SECONDS, hello_wait: float = HELLO_WAIT,
+                 write_chunk: int = WRITE_CHUNK, write_gap: float = WRITE_GAP,
+                 rescan_seconds: float = RESCAN_SECONDS, stop: threading.Event | None = None) -> None:
         self._scanner = scanner
         self._open_port = open_port
         self._clock = clock
         self._mono = monotonic
-        self._stop = threading.Event()
+        self._stop = stop if stop is not None else threading.Event()
+        self._hello_wait = hello_wait
+        self._write_chunk = write_chunk
+        self._write_gap = write_gap
+        self._rescan_seconds = rescan_seconds
         self._idle: Callable[[float], None] = sleep if sleep is not None else self._stop.wait
         self._pause: Callable[[float], None] = sleep if sleep is not None else time.sleep
         self._cycle_seconds = cycle_seconds
@@ -334,14 +363,19 @@ class CydService:
         if now < self._next_scan:
             self._idle(min(IDLE_WAIT, self._next_scan - now))
             return
-        self._next_scan = now + RESCAN_SECONDS
+        self._next_scan = now + self._rescan_seconds
         for path in self._scanner():
             if self._backoff.get(path, 0.0) > now:
                 continue
             try:
                 port = self._open_port(path)
-            except OSError:
-                continue   # busy, no permission, or gone again: try at the next scan
+            except OSError as exc:
+                # Busy, no permission, or gone again: try at the next scan. A failure that
+                # comes with a hint (a BLE link held by the desktop) is one the user can fix.
+                hint = getattr(exc, "hint", None)
+                if hint:
+                    self._report(hint)
+                continue
             try:
                 answered = self._handshake(port, path)
             except OSError:
@@ -359,7 +393,7 @@ class CydService:
         self._rx = bytearray()
         # A board that rebooted when the port was opened says HELLO on its own; a running one
         # must be asked.
-        if self._await_reply(port, path, HELLO_WAIT):
+        if self._await_reply(port, path, self._hello_wait):
             return True
         for _ in range(PING_TRIES):
             self._write(port, b"PING\n")
@@ -484,17 +518,17 @@ class CydService:
         self._last_tx = self._mono()
 
     def _write(self, port: Port, data: bytes) -> None:
-        """Write one command, paced for the board's small input buffer.
+        """Write one command, paced for the board's small serial input buffer.
 
         The leading newline ends whatever half line the board may still be holding (from
         an overflow, or an earlier host), so the command itself is read cleanly; the board
         ignores the empty line.
         """
         data = b"\n" + data
-        for start in range(0, len(data), WRITE_CHUNK):
+        for start in range(0, len(data), self._write_chunk):
             if start:
-                self._pause(WRITE_GAP)
-            port.write(data[start:start + WRITE_CHUNK])
+                self._pause(self._write_gap)
+            port.write(data[start:start + self._write_chunk])
 
     # ---------------------------------------------------------------- teardown
     def _close(self, reason: str) -> None:
@@ -505,7 +539,7 @@ class CydService:
         self._outstanding = None
         self._last_frame = None
         self._current_key = None
-        self._next_scan = self._mono() + RESCAN_SECONDS
+        self._next_scan = self._mono() + self._rescan_seconds
         if port is not None:
             self.on_disconnect(reason)
 

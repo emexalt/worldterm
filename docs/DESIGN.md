@@ -2,7 +2,7 @@
 
 This document is for the people who will maintain and extend worldterm. It explains how
 the program is built and why: its parts, the data that moves between them, the rules each
-part keeps, and where it is fragile. It describes the code as of 2026-10-24, running on
+part keeps, and where it is fragile. It describes the code as of 2026-10-29, running on
 Python 3.14.4 with Textual 2.1.2 and Rich 13.9.4.
 
 Read the [README](../README.md) first for what the program does from a user's point of
@@ -78,7 +78,8 @@ and say so.
    standard library and never import Textual, Rich or `worldterm.ui`. Parsing,
    classification, state and aggregation are ordinary functions over ordinary objects,
    tested without a terminal and reusable by another front end. Even the CYD display's
-   serial port is driven with `termios` rather than a library (D14).
+   serial port is driven with `termios` rather than a library (D14), and its Bluetooth LE
+   link with a plain socket (D17).
 2. **Textual is the only third-party dependency**, and only the UI uses it. Rich comes
    with Textual.
 3. **Both lists behave alike.** They share one screen class, one row-styling rule, one
@@ -89,14 +90,15 @@ and say so.
 5. **Fail soft.** A dead feed costs a notification, not the other feeds or the session.
    A failed save keeps the in-memory state. State files are replaced atomically.
 6. **Keep it injectable.** Feed URLs accept `file://`, the data directory is a parameter,
-   and functions that depend on the clock take `now`. The tests depend on all three.
+   functions that depend on the clock take `now`, and the article loader is a parameter of
+   the app. The tests depend on all four.
 7. **The UI thread owns all state.** Worker threads download and parse. Every change to a
    store or a widget happens on Textual's event loop (section 4.2). The CYD worker and the
    wall server never see a store: the UI thread hands them snapshots (sections 4.4, 4.5).
-8. **Text from outside is never markup.** Headlines, summaries and alert text reach
-   widgets as `rich.text.Text`, not as plain strings, because Textual parses plain
-   strings as markup (section 10.10). The reader currently breaks this rule; see
-   section 16.
+8. **Text from outside is never markup.** Headlines, summaries, article and alert text
+   reach widgets as `rich.text.Text`, not as plain strings, because Textual parses plain
+   strings as markup (section 10.10). Two labels in the note editor still break this rule;
+   see section 16.
 
 ## 3. Architecture at a glance
 
@@ -137,26 +139,32 @@ device:
             └─► wall.build_snapshot ──► WallServer (thread) ──► HTTP GET ──► browsers
 ```
 
+The reader is the one place that fetches on demand: opening a news event downloads the
+article's page on a thread of its own and shows the text `article.extract` finds in it
+(sections 4.6 and 6.4).
+
 | Module | Responsibility | Imports from worldterm |
 |---|---|---|
-| `main.py` | Command line, preset resolution, option checks, terminal check, starts the app | `cyd`, `nws`, `sources`, `store`, `wall`, `ui.app` |
+| `main.py` | Command line, preset resolution, option checks, terminal check, starts the app | `article`, `cyd`, `nws`, `sources`, `store`, `wall`, `ui.app` |
 | `worldterm/sources.py` | Catalog of named feeds and preset groups | nothing |
 | `worldterm/feed.py` | HTTP and `file://` fetch, RSS and Atom parsing; `Article`, `FeedError` | nothing |
+| `worldterm/article.py` | Article text: fetch a page, decode it, and find the body in it (`extract`); `Body`, `Block` | `feed` |
 | `worldterm/severity.py` | `Severity` levels and the news keyword classifier | nothing |
 | `worldterm/slug.py` | Titles to file-name slugs, for notes | nothing |
 | `worldterm/store.py` | `Event` and `Store`: merging, tally, flags, notes, JSON persistence | `feed`, `severity` |
 | `worldterm/nws.py` | NWS alert parsing, `Alert`, the severity table, the alert lifecycle | `feed`, `severity`, `store` |
 | `worldterm/analytics.py` | Pure aggregations behind the dashboard, for news and weather | `nws`, `severity`, `store` |
-| `worldterm/cyd.py` | The CYD display: `Headline` snapshots, frames, the line protocol, and `CydService`, which finds the board, keeps it current and copes with it leaving | `severity`, `store`, `serialport` (lazily) |
+| `worldterm/cyd.py` | The CYD display: `Headline` snapshots, frames, the line protocol, and `CydService`, which finds the board, keeps it current and copes with it leaving | `severity`, `store`, `serialport` and `bleport` (lazily) |
 | `worldterm/serialport.py` | USB serial ports with the standard library: discovery by USB id through `/sys`, raw 8N1 I/O. Linux only | nothing |
+| `worldterm/bleport.py` | The CYD over Bluetooth LE: an ATT client on an L2CAP socket that uses the board's Nordic UART Service as a byte stream (`BlePort`), and the send-text program (`python3 -m worldterm.bleport`). Linux, Python 3.14+ | nothing |
 | `worldterm/palette.py` | The severity colours as hex values, shared by the terminal UI and the wall page | `severity` |
 | `worldterm/wall.py` | The wall page: `build_snapshot` (the JSON the page shows) and `WallServer`, a read-only `http.server` on a daemon thread. `wall.html` is the page itself | `analytics`, `cyd`, `nws`, `palette`, `severity`, `store` |
-| `ui/app.py` | `WorldTerm` app, fetch and CYD workers, the wall server's start and stop, `MainScreen`, `WeatherScreen` | most of the above |
+| `ui/app.py` | `WorldTerm` app, fetch and CYD workers, article downloads and their cache, the wall server's start and stop, `MainScreen`, `WeatherScreen` | most of the above |
 | `ui/listscreen.py` | `EventListScreen`, the Netcool list; `HelpScreen`; `note_template` | `severity`, `slug`, `store`, `ui.*` |
 | `ui/table.py` | `EventTable`: a DataTable with full-row background colors | nothing |
 | `ui/styles.py` | Row styles, lamps, time and sort helpers; re-exports the palette | `palette`, `severity`, `store` |
 | `ui/menu.py` | `ContextMenu`, a modal menu placed at the pointer | nothing |
-| `ui/reader.py` | `ReaderScreen`: details of an article or alert | `severity`, `store`, `ui.styles` |
+| `ui/reader.py` | `ReaderScreen`: details of an article or alert, and the article's text | `article`, `severity`, `store`, `ui.styles` |
 | `ui/editor.py` | `NoteEditorScreen`, `ConfirmDiscard`, hand-off to `$EDITOR` | nothing |
 | `ui/dashboard.py` | `DashboardScreen`: layout, pages, refresh; the news trigger panels | `analytics`, `severity`, `ui.*` |
 | `ui/charts.py` | Generic Rich renderables: `StackedBar`, chips, lamp tables, sparklines | `analytics`, `severity`, `ui.styles` |
@@ -169,8 +177,9 @@ Dependency rules to keep true:
   generic widgets.
 - `ui/listscreen.py` refers to `ui/app.py`, and `store.py` to `nws.py`, only under
   `TYPE_CHECKING`, which avoids import cycles.
-- `serialport.py` is the one Linux-specific module. `cyd.py` imports it only inside
-  `service_for`, so everything else imports on any platform.
+- `serialport.py` and `bleport.py` are the Linux-specific modules. `cyd.py` imports them
+  only inside `service_for` and `unavailable_reason`, so everything else imports on any
+  platform.
 
 A good reading order for newcomers is `store.py` (the `Event` and `Store.merge`), then
 `ui/listscreen.py` (how an event becomes a row), then `ui/app.py` (where events come
@@ -182,13 +191,14 @@ pyproject.toml
 README.md               user guide
 docs/DESIGN.md          this document
 worldterm/              data layer, standard library only
-  sources.py  feed.py  severity.py  slug.py  store.py  nws.py  analytics.py
-  cyd.py  serialport.py  palette.py  wall.py  wall.html
+  sources.py  feed.py  article.py  severity.py  slug.py  store.py  nws.py  analytics.py
+  cyd.py  serialport.py  bleport.py  palette.py  wall.py  wall.html
   ui/                   Textual front end
     app.py  listscreen.py  table.py  styles.py  menu.py  reader.py  editor.py
     dashboard.py  charts.py  weatherpanels.py
 tests/                  unittest suite
   fixtures/             captured feeds and alerts
+    articles/           small pages copying the structure of real news sites
 cyd/                    the board side of the CYD display (MicroPython), with its own README
 ```
 
@@ -274,12 +284,13 @@ canceled. The list screen that pushed them acts on the result.
 
 None of the pushed screens changes any state itself. The list marks an event read before
 it opens the reader, and writes the note file after the editor closes. Every change of
-state is followed by `WorldTerm.save()`.
+state is followed by `WorldTerm.save()`. The reader asks the app for the article's text
+(section 4.6), which changes no event.
 
 ### 4.4 The CYD display
 
 A third worker, `run_cyd` (group `cyd`), runs `CydService.run()` for the whole session. It
-is the only thread that touches the serial port, and the UI thread never waits for it.
+is the only thread that touches the board's link, and the UI thread never waits for it.
 
 ```
  UI thread (Textual event loop)                    display worker
@@ -306,8 +317,27 @@ is the only thread that touches the serial port, and the UI thread never waits f
 - `action_quit` calls `CydService.stop()` before `exit()`. The service's `finally` writes a
   "worldterm stopped" frame and closes the port with RTS dropped before DTR, the order that
   leaves an ESP32 running.
-- Callbacks reach the UI through `_from_cyd`, which swallows the `RuntimeError` that
-  `call_from_thread` raises once the app has stopped.
+- Callbacks reach the UI through `_from_thread`, which swallows the `RuntimeError` that
+  `call_from_thread` raises once the app has stopped. Article downloads use it too.
+
+**Two transports, one protocol.** The board takes the same lines over USB serial and over
+Bluetooth LE (`--cyd ble:ADDRESS`), so the service does not know which it is using: it
+reads and writes a `Port`, and `service_for` picks the port and four settings.
+
+| Setting | USB (`serialport.SerialPort`) | Bluetooth LE (`bleport.BlePort`) |
+|---|---|---|
+| Finding the board | every port with an ESP32 bridge's USB id, every 2 s | the one address given, every 10 s (`BLE_RESCAN_SECONDS`): an attempt keeps the radio busy |
+| Waiting for `HELLO` after opening | 3 s, because opening the port may reset the board | none: a BLE connection never resets it, so the service pings at once |
+| Pacing writes | 64-byte chunks, 20 ms apart, for the board's small serial buffer | none from the service: `BlePort` cuts writes to the link's MTU (247 bytes) and waits for each to be acknowledged |
+| Opening | immediate | a non-blocking connect that checks the service's stop flag every 0.2 s, so `q` never waits for a board that is out of range |
+
+`BlePort` speaks ATT, the protocol under GATT, directly on Linux's L2CAP socket for the ATT
+channel (CID 4). After connecting it raises the MTU, finds the Nordic UART Service's RX and
+TX characteristics by reading the characteristic declarations, and subscribes to TX. It
+then writes with Write Requests, each acknowledged before the next, and keeps the payloads
+of TX notifications as the bytes `read()` returns. Requests the board might send it are
+answered with an error (or the MTU), so the link never times out on them. Every wait is
+bounded by 0.2 s slices, as the serial port's are.
 
 ### 4.5 The wall page
 
@@ -340,6 +370,43 @@ endpoint that changes anything, which is what makes the page read-only.
 - Feed text reaches the page as JSON and is written with `textContent`, never `innerHTML`,
   and the page's Content-Security-Policy allows nothing but itself and `/api/state`.
 - The JSON carries titles, sources, times and counts, never notes or links.
+
+### 4.6 Reading an article
+
+Feeds carry a summary, not the article, so the reader fetches the page when it opens.
+Section 6.4 describes how the text is found in it.
+
+```
+ UI thread                                              download thread "article"
+ ReaderScreen.on_mount
+   └─ WorldTerm.request_article(link, callback)
+        cached?  yes ─► callback(link, Body) at once
+        no: the first to ask starts ─────────────────► article.load(link):
+                                                         fetch, decode, extract
+ _article_done(link, Body or reason)  ◄─ _from_thread ──┘
+   cache a Body (50 kept, the least recently read dropped first)
+   └─ every waiting callback ─► ReaderScreen._article_ready
+                                  closed, or the app quit? ignore it
+                                  Body: replace the summary; "1,036 words from ..."
+                                  reason: keep the summary; "unavailable (...)"
+```
+
+- There is one download per link. A reader opened again while its page is still loading
+  joins the waiting callbacks rather than starting a second thread.
+- Failures are not cached, so opening the reader again tries again. Nothing is written to
+  disk.
+- The download runs on a daemon thread, not a Textual worker. Textual runs thread workers
+  in the event loop's default executor, which `asyncio.run` joins when the app ends
+  (section 4.4), and a blocked `urlopen` cannot notice a cancel flag, so a page still
+  loading would hold `q` for up to `--timeout`. A daemon thread is simply left behind. Its
+  late report goes through `_from_thread`, which drops it once the app has stopped, and the
+  reader checks `is_attached` before it touches a widget.
+- The thread only downloads and parses. The cache, and every widget, change on the UI
+  thread (D12).
+- `WorldTerm(article_loader=None)`, the constructor's default, never fetches: the reader
+  then shows the summary and no Article line. `main.py` passes
+  `partial(article.load, timeout=--timeout)`. Only news is fetched; an alert's reader
+  already shows the whole alert.
 
 ## 5. Data model
 
@@ -408,6 +475,15 @@ reader and the note template all branch on it.
 - `deciding` lists the hits whose level set the base severity. The other hits were
   *outranked*.
 
+### 5.6 Body and Block
+
+`article.Body` is what the reader shows in place of the summary. `blocks` is a tuple of
+`Block(kind, text)`, where `kind` is `p` (a paragraph), `h` (a subheading), `li` (a list
+item) or `quote`. `url` is the page it came from, and `method` says where the text was
+found: `html`, or `jsonld` (section 6.4). `words` and `host` are derived. The text is
+plain, never markup, and a `<br>` survives as a line break. Bodies live only in the app's
+memory cache (section 4.6) and are never saved.
+
 ## 6. News ingest
 
 ### 6.1 Sources and presets
@@ -428,7 +504,9 @@ topic feeds because they mostly repeat stories from the world feeds.
 `feed.fetch(url, timeout)` uses `urllib.request` with a fixed User-Agent and handles both
 `http(s)://` and `file://`. Every failure, whether an HTTP status, DNS, a refused
 connection, a timeout or a malformed URL, becomes a `FeedError` with a one-line message.
-`nws.load` fetches through the same function.
+`nws.load` fetches through the same function. `feed.fetch_with_type(url, timeout, limit=)`
+is the same fetch, which also returns the `Content-Type` and refuses a reply over `limit`
+bytes; the article loader uses it (section 6.4).
 
 ### 6.3 Parsing
 
@@ -453,6 +531,89 @@ times without a zone are taken as UTC.
 
 The GUID is the event's identity. A feed that issues a new GUID for the same story
 produces a new event every time.
+
+### 6.4 Article text
+
+No configured feed carries an article's text: `content:encoded` is absent, or a copy of the
+summary. `article.load(url, timeout)` therefore fetches the page, at most `MAX_PAGE`
+(5 MB), with `fetch_with_type`. It refuses anything whose type is not HTML. It decodes the
+bytes with `decode`: the header's charset, else a `<meta>` charset in the first 4 KB, else
+UTF-8. Then it calls `extract`. Every way of failing is a `FeedError` with a one-line
+reason, and the reader shows that reason.
+
+`extract(page)` is a pure function that returns a `Body`, or `None` when the page holds no
+article. It uses Mozilla Readability's scoring, plus two rules that the live sources needed,
+and falls back to JSON-LD. Every step below was needed on a real page:
+
+1. **Tree.** An `html.parser` subclass builds a light element tree.
+   - It drops the contents of `SKIP_TAGS`: script, style, noscript, template, svg, math,
+     iframe, object, canvas, form controls, nav, footer, aside, figure and figcaption.
+   - Skipping ends at the element's own end tag, or at the end tag of an element around
+     it, so an unclosed `<figure>` cannot swallow the rest of the page.
+   - An open `<p>` closes when a block element starts, and `<li>` closes an open `<li>`,
+     as in a browser. End tags pop to the nearest matching open element; strays are ignored.
+   - `<script type="application/ld+json">` blocks are kept aside.
+2. **Score** (Readability).
+   - Each `<p>` or `<pre>` of at least 25 characters is worth `1 + commas + min(length/100, 3)`.
+     It gives that in full to its parent, half to its grandparent, and `1/(3 × level)` to
+     each of the next three ancestors.
+   - An ancestor starts from its tag's weight in `TAG_WEIGHT`, then gains 25 when its class,
+     id, `data-component` or `role` names content (`POS`) and loses 25 when it names
+     furniture (`NEG`: promo, related, share, newsletter, caption, byline, advert, cookie,
+     links-block and the like).
+   - Each score is finally multiplied by (1 − link density).
+3. **Choose.**
+   - Take the best-scoring element, and climb to a parent that scores higher, stopping at
+     a parent below a third of the best. Then climb past wrappers that are an only child.
+   - Join the siblings that share its tag and a non-empty class, and siblings that score
+     at least max(10, 20% of the best).
+   - The join is what puts BBC articles back together. Their 38 paragraphs sit in separate
+     `ComponentWrapper` blocks, and without the join only the largest block came through.
+4. **Emit,** in document order: `p` and `pre` as paragraphs, `h2`–`h6` as subheadings, `li`
+   as list items, `blockquote` as a quote.
+   - A furniture-named block inside is skipped, unless it holds at least half the chosen
+     text. ABC Australia wraps its body in such a block, so excluding by name alone lost it.
+   - The best-scoring element itself is never skipped. A joined sibling can be: a byline
+     shares its wrapper class with the text blocks.
+   - Blocks that are at least half links are dropped, as are duplicates and headings with
+     no paragraph after them (BBC's "Related topics").
+5. **Decide.**
+   - Under `MIN_TEXT` (500 characters) of paragraphs actually shown, the page is not an
+     article and the result is `None`. This catches CBS video pages, France 24's ad-block
+     notice and UN live pages.
+   - An `articleBody` in the JSON-LD wins instead when it has at least 500 characters and is
+     more than 1.2 times the HTML text. SCMP's pages are drawn by script, and only their
+     JSON-LD carries the text, one paragraph per line. An `articleBody` that contains tags is
+     parsed as HTML.
+
+Measured on 2026-10-29 with the first three articles of each of the 16 sources:
+
+| Sources | Result |
+|---|---|
+| bbc, abc-us, dw, euronews, aljazeera, cnbc | full text |
+| npr, pbs, csmonitor, rfi, abc-au | full text, with the site's own lines kept: a newsletter plug, "Support trusted journalism", "Already a subscriber? Login", "Issued on", an "In short" box |
+| cbs | full text, live blogs included (5,400 words); video pages have none |
+| un | full text; live pages have none |
+| scmp | full text, from the JSON-LD |
+| japantimes | the free paragraphs only (paywall) |
+| france24 | mostly video pages, which have none |
+
+Of the 48 pages, 42 gave text: 39 from the HTML and 3 from the JSON-LD. The other six were
+video pages, live pages and an NPR audio story, and they correctly fall back to the
+summary. Extraction takes 10–60 ms a page, and about 200 ms for a 0.9 MB live blog.
+
+The tables and thresholds are at the top of `article.py`. Each page in
+`tests/fixtures/articles/` copies one structure found live, with invented text. To repeat
+the measurement:
+
+```sh
+python3 -c "
+from worldterm import article, feed, sources
+for key, src in sources.SOURCES.items():
+    for item in feed.load(src.url)[:3]:
+        try: body = article.load(item.link); print(key, body.method, body.words, 'words')
+        except feed.FeedError as exc: print(key, '--', exc)"
+```
 
 ## 7. News severity
 
@@ -811,10 +972,20 @@ callback.
 
 ### 10.8 Reader and note editor
 
-`ReaderScreen` shows an article's node, dates, flags, link, categories, matched keywords
-and summary. When the event has an `alert`, it shows instead the office, the NWS severity,
+For news, `ReaderScreen` shows the article's node, dates, flags, link, an Article line,
+categories, matched keywords and text.
+
+- The text starts as the feed's summary. When the page arrives it is replaced by the
+  article's text (section 4.6): blocks separated by blank lines, subheadings in bold, list
+  items as `•` lines, quotes in italics, at most 100 columns wide.
+- The Article line says `fetching from <host> …`, then `N words from <host>, extracted from
+  the page (o opens the original)`. On failure it says `unavailable (<reason>); showing the
+  feed's summary`.
+
+When the event has an `alert`, the reader shows instead the office, the NWS severity,
 urgency, certainty and response, the areas, the timing, the zones, and the full
-description and instructions.
+description and instructions. It fetches nothing. Every string from a feed or a page
+reaches its widget as `Text` (section 10.10).
 
 `NoteEditorScreen` wraps a `TextArea`. A new note starts from
 `listscreen.note_template(ev)`: a heading made from the slug, then metadata, with a
@@ -865,8 +1036,9 @@ border titles as markup: any word in square brackets is read as a style tag. So:
   never parsed. The table cells, headers and dashboard tables do this.
 - Key hints in panel titles are written `(t)`, not `[t]`, which would vanish.
 
-The reader and two labels in the note editor still pass plain strings; section 16
-describes what goes wrong.
+Two labels in the note editor still pass plain strings; section 16 describes what goes
+wrong. The reader passes every string as `Text`, and a test opens a headline containing
+`[/b]`.
 
 ## 11. The dashboard
 
@@ -959,11 +1131,11 @@ Every bar and lamp is accompanied by a number or a legend.
 | `--preset`, `-p NAME[,NAME...]` | `all` | Sources and groups from `sources.py` |
 | `--list-presets` | | Print the catalog and exit |
 | `--interval`, `-i SECONDS` | 300 | Refresh period for news and weather, at least 15 |
-| `--timeout SECONDS` | 15 | Per-request timeout, news and weather |
+| `--timeout SECONDS` | 15 | Per-request timeout: each feed, the alerts, and each article page the reader fetches |
 | `--data-dir DIR` | see below | Where the state files and notes live |
 | `--weather`, `-w AREA` | `us` | `us`, `off`, or codes such as `MA,RI,AN` |
 | `--weather-url URL` | none | Fetch alerts from this URL or `file://` path instead; overrides `--weather` |
-| `--cyd MODE` | `auto` | The CYD display: `auto` uses a board whenever one is plugged in, `off` never opens a serial port, a path such as `/dev/ttyUSB0` uses that port only |
+| `--cyd MODE` | `auto` | The CYD display: `auto` uses a board whenever one is plugged in, `off` never opens a serial port, a path such as `/dev/ttyUSB0` uses that port only, `ble:ADDRESS` reaches the board over Bluetooth LE |
 | `--wall MODE` | `8070` | The wall page: a port (every interface), `HOST:PORT` for one address, or `off` |
 | `--version` | | Print the version written in `main.py` |
 
@@ -1007,8 +1179,15 @@ Temporary `.state-*.json` files exist briefly while a save is in progress.
 | The port answers nothing, or with another protocol version | the handshake | One warning toast per port | The port is left alone for 30 seconds, then tried again |
 | The board is unplugged, or stops answering | a read or write fails, or three commands go unanswered | "CYD display disconnected"; the chip dims | Rescan every 2 seconds; the frame is redrawn on reconnect |
 | worldterm dies without closing the port | the board | "no update from worldterm" on the board's bottom row after 30 seconds | |
+| A BLE board is off, out of range, or running another program | the connect fails or finds no Nordic UART Service | Nothing; the `CYD` chip stays dim | Tried again every 10 seconds |
+| `--cyd ble:` with a malformed address, or Python older than 3.14 | `main.py` | An argument error, exit status 2 | |
+| Another program on this computer holds the BLE connection: the desktop after pairing in Settings, another worldterm, the send command | the connect fails with `EBUSY` (`bleport.LinkError`, which carries a hint) | One toast naming the cause and `bluetoothctl disconnect`; the send command prints the same | Tried again every 10 seconds; one ATT channel per computer and board |
 | The wall port is taken, or cannot be bound | `WallServer` raises `OSError` at startup | "Wall page: cannot listen on ..."; a dim `WALL` chip | No page; everything else runs |
 | A browser cannot reach worldterm | the page's poll fails | "worldterm unreachable since HH:MM" on the page; the last data stays | |
+| An article's page cannot be fetched (an HTTP error, DNS, a timeout, over 5 MB) | `fetch_with_type` raises `FeedError` | The reader's Article line: "unavailable (HTTP 403); showing the feed's summary" | Not cached: opening the reader again retries |
+| The link is not a web page (audio, PDF) | `article.load` checks the type | "unavailable (not a web page (audio/mpeg))" | Same |
+| The page has no article (a video, a live page, an audio story) | `extract` returns `None` | "unavailable (no article text on the page)" | Same |
+| The extractor raises | `_fetch_article` | "unavailable (TypeError: ...)" | Same; the reader never waits forever |
 
 ## 14. Testing
 
@@ -1018,9 +1197,10 @@ Temporary `.state-*.json` files exist briefly while a save is in progress.
 python3 -m unittest discover -s tests -v
 ```
 
-The suite takes about 45 seconds, almost all of it in the headless UI tests. It needs no
+The suite takes about a minute, almost all of it in the headless UI tests. It needs no
 network access and opens no serial port. The two feed-error tests connect to a closed port
-on 127.0.0.1, and the wall tests bind 127.0.0.1 on a port the kernel picks. It prints lines
+on 127.0.0.1, the wall tests bind 127.0.0.1 on a port the kernel picks, and the reader
+tests use a fake article loader or a `file://` page. It prints lines
 such as `Executing <Task ...> took 0.110 seconds`. These are asyncio's slow-callback
 warnings, which appear because `IsolatedAsyncioTestCase` runs the event loop in debug
 mode. They are not failures.
@@ -1029,7 +1209,8 @@ mode. They are not failures.
 
 | File | Covers |
 |---|---|
-| `test_feed.py` | RSS and Atom parsing, field priorities, HTML stripping, dates, GUID hashing, `file://` fetch, errors |
+| `test_feed.py` | RSS and Atom parsing, field priorities, HTML stripping, dates, GUID hashing, `file://` fetch, `fetch_with_type`, errors |
+| `test_article.py` | Finding an article's text: each fixture page, broken HTML (unclosed `<p>` and `<figure>`), entities, line breaks, markup-like brackets, duplicates, link lists, the `MIN_TEXT` boundary, JSON-LD (plain, with markup, malformed, shorter than the page), charsets, and `load`'s refusals |
 | `test_severity.py` | Every classifier behavior: levels, default, modifiers, categories, whole-word stems, longest match, `MatchDetails` |
 | `test_slug.py` | Slugs and note file names |
 | `test_sources.py` | Catalog consistency, preset resolution, `--feed` parsing |
@@ -1037,9 +1218,10 @@ mode. They are not failures.
 | `test_nws.py` | Alert parsing, the severity table, derived fields, URL building, every step of `apply_alerts` |
 | `test_analytics.py` | Every aggregation, for news and for weather |
 | `test_styles.py` | Distinct colors, acknowledged contrast, row-style flags |
-| `test_ui.py` | Both lists, the menu, selection and batch acknowledge, reader, editor, both dashboard pages, narrow layouts, feed errors |
+| `test_ui.py` | Both lists, the menu, selection and batch acknowledge, reader, editor, both dashboard pages, narrow layouts, feed errors; the reader's article text: shown, failed, cached, one download however often it is asked for, a reader closed early, quitting mid-download, alerts never fetched, markup-like headlines, and a `file://` page end to end |
 | `test_serialport.py` | Port discovery against a fake `/sys`; raw I/O, timeouts, the exclusive lock and loss of the device, on a pseudo-terminal |
-| `test_cyd.py` | Headline selection and the day rule, ASCII folding and wrapping, frames and the line protocol, every state of `CydService` against a scripted fake board, and the app wiring with an injected service |
+| `test_cyd.py` | Headline selection and the day rule, ASCII folding and wrapping, frames and the line protocol, every state of `CydService` against a scripted fake board, the BLE settings of `service_for`, and the app wiring with an injected service |
+| `test_bleport.py` | The BLE link against a fake ATT server on a `SOCK_SEQPACKET` socket pair: MTU, discovery across several responses, subscription, writes cut to the MTU, notifications and indications, requests from the board, a missing UART, timeouts, the board leaving, the send-text program, and `CydService` driving the board over it |
 | `test_wall.py` | `--wall` parsing, the snapshot over both fixtures (rotation, folding, cap, JSON safety), the server on a loopback port (page, state, HEAD, 404, 405, prompt stop, port in use), and the app wiring |
 
 ### 14.3 Fixtures
@@ -1050,6 +1232,14 @@ from the live API on 2026-10-10 with geometry removed and long text shortened. O
 those alerts, a Tornado Warning, is synthetic. It was derived from a real Flash Flood
 Warning so that the Extreme level is tested, and its `note` field says so. Many tests
 assert exact counts from these files, so replacing a fixture means updating them.
+
+`tests/fixtures/articles/` holds four small pages written by hand. Each copies the structure
+of a real article page measured on 2026-10-29, with invented text:
+
+- `split_blocks.html`: BBC, an article split across sibling blocks.
+- `single_container.html`: Al Jazeera and NPR, one content container.
+- `jsonld_only.html`: SCMP, the text only in JSON-LD.
+- `video_page.html`: France 24 and CBS, a video page with no article.
 
 ### 14.4 Writing UI tests
 
@@ -1069,9 +1259,19 @@ assert exact counts from these files, so replacing a fixture means updating them
   factory, a clock, a monotonic timer and a sleep, so `test_cyd.py` drives `tick()`
   against a `FakePort` and a `FakeClock`. The app test passes `cyd_service=` with a fake
   port. The constructor default `cyd="off"` keeps every other test away from real ports.
+- The Bluetooth link is tested without a radio: `BlePort(address, sock=...)` takes an
+  already connected socket, and `test_bleport.py` hands it one end of an `AF_UNIX`
+  `SOCK_SEQPACKET` pair, which keeps message boundaries as the L2CAP socket does. The other
+  end is `FakeBoard`, a thread that serves the board's attribute table and answers lines.
+  No test calls `service_for("ble:...").tick()`, which would start a real connection.
 - The wall page is tested with `WallServer("127.0.0.1", 0)`: the kernel picks the port and
   `address` reports it. Pass it as `wall_server=` to the app, or `wall="127.0.0.1:0"`. The
   constructor default `wall="off"` keeps every other test off the network.
+- The reader's article text is tested with `article_loader=`, the function the app calls
+  with a link. `test_ui.py`'s `FakeLoader` records each call, returns a canned `Body` or
+  raises a `FeedError`, and can wait on a `threading.Event` to keep a download "in flight".
+  The download runs on its own thread, so wait for the result with `wait_until` rather than
+  a single `pilot.pause()`. The constructor default, `None`, fetches nothing.
 
 ### 14.5 Checking in a real terminal
 
@@ -1185,6 +1385,16 @@ Critical is the tightest at 4.5:1.
    `textContent`. Check it in headless Chrome at 1920x1080 and 3840x2160
    (`google-chrome --headless=new --screenshot --window-size=1920,1080 http://127.0.0.1:8070/`).
 
+### Tune article extraction
+
+1. Find a page whose text comes out wrong, and look at its structure: which elements hold
+   the paragraphs, and what the furniture around them is called.
+2. Copy that structure into a small page in `tests/fixtures/articles/`, with invented text,
+   and write the test it should pass in `tests/test_article.py`.
+3. Prefer a word in `POS` or `NEG`, or a tag in `SKIP_TAGS`, to a new rule. Any change
+   must keep the other fixtures passing.
+4. Repeat the measurement in section 6.4 over every source, and compare with its table.
+
 ### Upgrade Textual
 
 Check, in this order: the `EventTable` overrides (section 10.3), the context menu's
@@ -1196,18 +1406,14 @@ the dependency, for example `textual>=2.1,<3`.
 ## 16. Known issues and technical debt
 
 Most serious first. Items 1 to 4 were reproduced with scripts against the code on
-2026-10-10.
+2026-10-10. The serious half of item 1 has since been fixed, and what remains is minor.
 
-1. **The reader treats text from feeds as markup, and can crash.** `ReaderScreen` passes
-   the headline, the summary or alert description, and the node name to `Static` as plain
-   strings. A word in square brackets, such as *[updated]* or *[video]*, silently
-   disappears. Text that looks like a closing tag, such as *[/b]*, raises `MarkupError`
-   when the reader opens, which ends the program with a traceback. The note editor has
-   the same fault in its own labels: the *[modified]* flag in its title bar never appears,
-   and the discard prompt loses its *[y]* and *[n]* key hints. The list and its headers
-   show the same headline intact, and acknowledging it from the list does not crash. To
-   fix it, pass these strings as `Text(...)` or with `markup=False`, and add a test that
-   opens a headline containing brackets.
+1. **The note editor treats two of its own labels as markup.** The *[modified]* flag in its
+   title bar never appears, and the discard prompt loses its *[y]* and *[n]* key hints.
+   Pass those strings as `Text(...)` or with `markup=False`. The reader had the same fault
+   with text from feeds, where a headline containing *[/b]* raised `MarkupError` and ended
+   the program. It was fixed on 2026-10-29, when article text arrived, and
+   `test_text_that_looks_like_markup_is_shown_as_it_is` guards it.
 
 2. **Two events can share a note file, and saving one overwrites the other.** File names
    are the first-seen date plus a slug cut at 60 characters, and `write_note` overwrites
@@ -1252,7 +1458,8 @@ Most serious first. Items 1 to 4 were reproduced with scripts against the code o
    themselves; keep it pointing somewhere that reaches a person if the repository moves,
    or switch it to a contact address. The default `--weather us` downloads the whole
    national alert set, about 2.5 MB on 2026-10-10, at every refresh. A separate, longer
-   weather interval or a narrower default area would be kinder.
+   weather interval or a narrower default area would be kinder. Opening the reader adds one
+   request for the article's page, once per article per session.
 
 7. **Saves rewrite everything, often.** `WorldTerm.save` rewrites both state files in full
    after every feed arrives and after every user action. With the default 15 feeds that is
@@ -1297,6 +1504,30 @@ Most serious first. Items 1 to 4 were reproduced with scripts against the code o
     network can read the headlines and counts. It is read-only by construction and carries no
     notes or links, and `--wall 127.0.0.1:PORT` keeps it local, but there is no option for a
     password or TLS. The countdown drift of item 9 is visible there too.
+
+13. **Article text is a heuristic.** `extract` finds the body on every source measured
+    (section 6.4), but other pages can defeat it:
+    - Behind a paywall the text stops where the free part ends. A page drawn by script
+      shows nothing unless its JSON-LD carries `articleBody`.
+    - A site's own lines inside an article (newsletter plugs, login prompts, "Issued on")
+      are kept.
+    - Text written straight into `<div>`s with `<br>`s, rather than in `<p>`s, is not found.
+      Readability turns such divs into paragraphs, and `extract` could too.
+    - A page made mostly of list items, such as "five things to know", can fall under
+      `MIN_TEXT`, which counts paragraphs only, and keep the summary.
+    - A page served to worldterm can differ from what a browser gets: a consent wall would
+      be extracted as if it were the article.
+
+14. **The CYD's Bluetooth is open.** Anyone within range can connect to the board and put
+    text or frames on its screen; there is no pairing (the owner's choice, 2026-10-30).
+    Nothing can be read from the board this way. Pairing with a bond, accepted only for a
+    short while after a tap on the screen, would close it; the board's stack supports bonds,
+    and the host would then set `BT_SECURITY` on its socket. Also: worldterm finds a BLE
+    board only by address, the host side needs Python 3.14 or newer, and a phone beside
+    worldterm on the same board has not been tried. A pairing made in the desktop's
+    Bluetooth settings takes the board's ATT channel and locks worldterm out (found
+    2026-10-30); worldterm reports it, but cannot share the link, because Linux gives an LE
+    link one ATT channel and the alternative, BlueZ's D-Bus API, needs a library.
 
 ## 17. Design decisions
 
@@ -1377,6 +1608,34 @@ colour-blindness, and every colour carries a text label. The acknowledged shades
 are not used on the wall, where they would fall below 2:1 on a projector; acknowledged counts
 are shown as numbers instead.
 
+**D16. Article text with the standard library, fetched when read.**
+- *No library.* An extractor library such as trafilatura or readability-lxml would be more
+  thorough, but it brings lxml and more, against principles 1 and 2 and D1's no-install
+  property. `article.py` is instead a small scorer, and every rule in it was needed on a
+  measured source and is pinned by a fixture (section 6.4). When a site changes, the fix is
+  usually a word in `POS` or `NEG`.
+- *Fetched when read.* Pages are fetched only when a reader opens, never ahead, because
+  fetching every headline would mean hundreds of page requests per refresh.
+- *Kept in memory.* Pages are cached only in memory, so nothing new is written or has to be
+  pruned.
+- *A daemon thread.* The download runs on a daemon thread rather than a Textual worker, so
+  quitting never waits for it (section 4.6).
+
+**D17. Bluetooth LE through a socket, with the serial line protocol on top.**
+- *Nordic UART Service.* The board offers NUS, the de facto "serial port over BLE", rather
+  than a GATT service of worldterm's own. The line protocol then crosses unchanged, the
+  service needs four settings rather than a second implementation, and phone apps that
+  speak NUS can send the board text with no worldterm code.
+- *No library.* The usual Python route is bleak, which brings dbus-fast and drives BlueZ
+  over D-Bus. Python 3.14's Bluetooth sockets take an LE address type and a channel, so an
+  ATT client on the L2CAP socket for CID 4 is about 200 lines and needs no root; tried on
+  2026-10-30 before it was written (connect 0.45 s, a 1.2 KB frame in 0.45 s). The costs:
+  Linux only, Python 3.14 or newer, no scanning (the board shows its address instead), and
+  one connection per computer and board.
+- *Text is any line that is not a command.* So a phone app or `echo` works without a
+  prefix. A message stays 20 s, then worldterm's last frame is redrawn by the board itself,
+  which keeps it; a new frame ends the message at once.
+
 ## 18. Glossary
 
 **Netcool/OMNIbus.** IBM's fault-management event console, the model for worldterm.
@@ -1430,3 +1689,17 @@ yet.
 worldterm can use as a desk display for today's Critical headlines (section 4.4).
 
 **Wall.** The read-only web page for a big screen that worldterm serves (section 4.5).
+
+**ATT.** The Attribute Protocol, the request-and-response protocol under GATT on a
+Bluetooth LE link. `bleport.py` speaks it directly.
+
+**NUS.** The Nordic UART Service, a GATT service with an RX characteristic to write to and
+a TX characteristic that notifies: the common way to carry a byte stream over Bluetooth LE.
+
+**JSON-LD.** Structured data that a page embeds in `<script type="application/ld+json">`.
+News pages describe themselves there as a schema.org `NewsArticle`, and some include the
+whole text as `articleBody` (section 6.4).
+
+**Readability.** Mozilla's method, behind Firefox Reader View, for finding the main text of
+a page by scoring paragraphs and the elements around them. `article.py` uses its scoring
+(section 6.4).

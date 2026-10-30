@@ -50,7 +50,7 @@ HELP_TEXT = """\
   Shift+click      select range from cursor
   a                acknowledge / unacknowledge
                    (all selected rows, or the cursor row)
-  r                read article / alert
+  r                read article (full text) / alert
   n                create / edit note
   o                open link in browser
   R                refresh feeds and alerts now
@@ -485,7 +485,8 @@ class EventListScreen(Screen):
                 self.action_open_link()
             self.rebuild()
 
-        self.app.push_screen(ReaderScreen(ev), _done)
+        request = self.wt.request_article if self.wt.article_loader is not None else None
+        self.app.push_screen(ReaderScreen(ev, request), _done)
 
     def action_note(self) -> None:
         ev = self.current

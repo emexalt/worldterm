@@ -98,6 +98,18 @@ class HelperTests(unittest.TestCase):
         with self.assertRaises(feed.FeedError):
             feed.fetch("http://127.0.0.1:9/", timeout=2)
 
+    def test_fetch_with_type_reports_the_content_type(self):
+        data, content_type = feed.fetch_with_type(FIX.joinpath("articles", "video_page.html").as_uri())
+        self.assertIn(b"<html", data)
+        self.assertEqual(content_type, "text/html")
+
+    def test_fetch_with_type_refuses_a_reply_over_the_limit(self):
+        url = FIX.joinpath("atom_sample.xml").as_uri()
+        size = len(feed.fetch(url))
+        self.assertEqual(len(feed.fetch_with_type(url, limit=size)[0]), size)
+        with self.assertRaisesRegex(feed.FeedError, "more than 100 bytes"):
+            feed.fetch_with_type(url, limit=100)
+
 
 if __name__ == "__main__":
     unittest.main()

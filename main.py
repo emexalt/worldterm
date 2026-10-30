@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import argparse
 import sys
+from functools import partial
 
-from worldterm import cyd, nws, sources, wall
+from worldterm import article, cyd, nws, sources, wall
 from worldterm.store import default_data_dir
 from worldterm.ui.app import WorldTerm
 
@@ -27,7 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--interval", "-i", type=int, default=300, metavar="SECONDS",
                    help="refresh interval in seconds (default: 300, minimum 15)")
     p.add_argument("--timeout", type=float, default=15.0, metavar="SECONDS",
-                   help="per-feed HTTP timeout (default: 15)")
+                   help="HTTP timeout for each feed, the alerts and each article page (default: 15)")
     p.add_argument("--data-dir", metavar="DIR", default=None,
                    help=f"where state.json and notes/ live (default: {default_data_dir()})")
     p.add_argument("--weather", "-w", default=nws.DEFAULT_AREA, metavar="AREA",
@@ -35,9 +36,10 @@ def build_parser() -> argparse.ArgumentParser:
                         "'off', or state / marine area codes such as MA,RI,AN")
     p.add_argument("--weather-url", metavar="URL", default=None,
                    help="fetch alerts from this URL instead (api.weather.gov GeoJSON, or file://)")
-    p.add_argument("--cyd", default="auto", metavar="auto|off|PATH",
-                   help="Cheap Yellow Display over USB serial: 'auto' uses one whenever it is plugged in "
-                        "(default), 'off', or a port such as /dev/ttyUSB0")
+    p.add_argument("--cyd", default="auto", metavar="auto|off|PATH|ble:ADDRESS",
+                   help="Cheap Yellow Display: 'auto' uses one whenever it is plugged in over USB "
+                        "(default), 'off', a serial port such as /dev/ttyUSB0, or ble:ADDRESS for one "
+                        "reached over Bluetooth LE (its address is on its screen)")
     p.add_argument("--wall", default=str(wall.DEFAULT_PORT), metavar="PORT|HOST:PORT|off",
                    help=f"read-only wall dashboard for a big screen, served at http://<this host>:{wall.DEFAULT_PORT}/ "
                         "on every interface (default); HOST:PORT to bind one address; 'off' for no page")
@@ -63,7 +65,7 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         parser.error(f"--weather: {exc}")
     if args.cyd not in ("auto", "off"):
-        reason = cyd.unavailable_reason()
+        reason = cyd.unavailable_reason(args.cyd)
         if reason:
             parser.error(f"--cyd {args.cyd}: {reason}")
     try:
@@ -74,7 +76,8 @@ def main(argv: list[str] | None = None) -> int:
         print("worldterm: needs an interactive terminal (stdin/stdout must be a TTY)", file=sys.stderr)
         return 2
     WorldTerm(feeds, interval=args.interval, data_dir=args.data_dir, timeout=args.timeout,
-              weather=args.weather, weather_url=args.weather_url, cyd=args.cyd, wall=args.wall).run()
+              weather=args.weather, weather_url=args.weather_url, cyd=args.cyd, wall=args.wall,
+              article_loader=partial(article.load, timeout=args.timeout)).run()
     return 0
 
 

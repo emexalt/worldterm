@@ -1,11 +1,14 @@
 """Textual application: the news event list, the weather alert list, and the fetch workers."""
 from __future__ import annotations
 
+import threading
 import time
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from functools import partial
 from pathlib import Path
+from typing import Callable
 
 from rich.text import Text
 from textual import work
@@ -14,6 +17,7 @@ from textual.binding import Binding
 from textual.worker import get_current_worker
 
 from .. import feed, nws
+from ..article import Body
 from ..cyd import CydService, select_critical, service_for
 from ..wall import WallServer, build_snapshot, parse_wall
 from ..severity import Severity
@@ -22,6 +26,8 @@ from ..store import Event, Store
 from .dashboard import DashboardScreen
 from .listscreen import EventListScreen, HelpScreen, note_template  # noqa: F401  (re-exported)
 from .styles import SEVERITY_STYLE, clip, fmt_time
+
+ARTICLE_CACHE = 50   # article texts kept for the session, the least recently read dropped first
 
 
 class MainScreen(EventListScreen):
@@ -44,7 +50,7 @@ class MainScreen(EventListScreen):
         # The screen is composed now, so it is safe to start fetching.
         self.set_interval(self.wt.interval, self.wt.start_fetch)
         self.wt.start_fetch()
-        # The wall page's hourly arrivals and "N min ago" labels drift between saves.
+        # The wall page's hourly arrivals window moves with the clock between saves.
         self.set_interval(60, self.wt._sync_wall)
 
     def header_extra(self, text: Text) -> None:
@@ -140,7 +146,8 @@ class WorldTerm(App[None]):
                  timeout: float = 15.0, weather: str | None = nws.DEFAULT_AREA,
                  weather_url: str | None = None, cyd: str = "off",
                  cyd_service: CydService | None = None, wall: str = "off",
-                 wall_server: WallServer | None = None) -> None:
+                 wall_server: WallServer | None = None,
+                 article_loader: Callable[[str], Body] | None = None) -> None:
         super().__init__()
         # Plain URLs keep the feed's own channel title as the Node name.
         self.feeds: list[Source] = [f if isinstance(f, Source) else Source(key=f, label="", url=f) for f in feeds]
@@ -163,14 +170,19 @@ class WorldTerm(App[None]):
         self.cyd: CydService | None = cyd_service if cyd_service is not None else service_for(cyd)
         self.cyd_port: str | None = None
         if self.cyd is not None:
-            self.cyd.on_connect = partial(self._from_cyd, self._cyd_connected)
-            self.cyd.on_disconnect = partial(self._from_cyd, self._cyd_disconnected)
-            self.cyd.on_error = partial(self._from_cyd, self._cyd_error)
+            self.cyd.on_connect = partial(self._from_thread, self._cyd_connected)
+            self.cyd.on_disconnect = partial(self._from_thread, self._cyd_disconnected)
+            self.cyd.on_error = partial(self._from_thread, self._cyd_error)
         # The wall page. Also "off" by default; main.py passes the command line's value.
         # A ready-made server (bound to port 0) is for tests.
         self._wall_mode = wall
         self.wall: WallServer | None = wall_server
         self.wall_error: str | None = None
+        # Article text for the reader. None, the default, never fetches a page, so tests and
+        # other callers stay offline; main.py passes article.load.
+        self.article_loader = article_loader
+        self._articles: OrderedDict[str, Body] = OrderedDict()
+        self._article_waiters: dict[str, list[Callable[[str, Body | str], None]]] = {}
 
     # ------------------------------------------------------------------ lifecycle
     def on_mount(self) -> None:
@@ -372,8 +384,8 @@ class WorldTerm(App[None]):
         assert self.cyd is not None
         self.cyd.run(cancelled=lambda: worker.is_cancelled)
 
-    def _from_cyd(self, callback, *args) -> None:
-        """Run *callback* on the UI thread for the display worker. A finished app is not an error."""
+    def _from_thread(self, callback, *args) -> None:
+        """Run *callback* on the UI thread for a background thread. A finished app is not an error."""
         try:
             self.call_from_thread(callback, *args)
         except RuntimeError:  # "App is not running"
@@ -430,6 +442,47 @@ class WorldTerm(App[None]):
             weather_refreshed=self.weather_refreshed,
             next_refresh_at=now + timedelta(seconds=max(0.0, self.next_refresh_at - time.monotonic())),
         ))
+
+    # ------------------------------------------------------------------ article text
+    def request_article(self, link: str, callback: Callable[[str, Body | str], None]) -> None:
+        """Hand *callback* the article at *link*, or why there is none, on the UI thread.
+
+        A cached article is handed over at once. Otherwise one download thread per link
+        fetches it, however many readers ask meanwhile.
+        """
+        if self.article_loader is None:
+            return
+        body = self._articles.get(link)
+        if body is not None:
+            self._articles.move_to_end(link)
+            callback(link, body)
+            return
+        waiters = self._article_waiters.setdefault(link, [])
+        waiters.append(callback)
+        if len(waiters) == 1:
+            # A daemon thread, not a Textual worker: those run in the event loop's executor,
+            # which is joined at exit, and a download cannot notice being cancelled. A page
+            # still loading must never hold up q.
+            threading.Thread(target=self._fetch_article, args=(link,), name="article", daemon=True).start()
+
+    def _fetch_article(self, link: str) -> None:
+        """Runs on the download thread: fetch and extract, then report to the UI thread."""
+        assert self.article_loader is not None
+        try:
+            result: Body | str = self.article_loader(link)
+        except feed.FeedError as exc:
+            result = str(exc)
+        except Exception as exc:  # defensive: a parser bug must not leave the reader waiting
+            result = f"{type(exc).__name__}: {exc}"
+        self._from_thread(self._article_done, link, result)
+
+    def _article_done(self, link: str, result: Body | str) -> None:
+        if isinstance(result, Body):   # failures are not kept, so opening the reader again retries
+            self._articles[link] = result
+            while len(self._articles) > ARTICLE_CACHE:
+                self._articles.popitem(last=False)
+        for callback in self._article_waiters.pop(link, []):
+            callback(link, result)
 
 
 # Backwards-compatible alias used by main.py

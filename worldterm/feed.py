@@ -37,16 +37,28 @@ class Article:
 
 def fetch(url: str, timeout: float = 15.0) -> bytes:
     """Return raw bytes for *url*. Supports http(s) and file:// URLs."""
+    return fetch_with_type(url, timeout)[0]
+
+
+def fetch_with_type(url: str, timeout: float = 15.0, *, limit: int | None = None) -> tuple[bytes, str]:
+    """`fetch`, also returning the Content-Type header ("" when there is none).
+
+    A reply longer than *limit* bytes is a FeedError rather than a large read.
+    """
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.read()
+            data = resp.read() if limit is None else resp.read(limit + 1)
+            content_type = resp.headers.get("Content-Type", "")
     except urllib.error.HTTPError as exc:
         raise FeedError(f"HTTP {exc.code} fetching {url}") from exc
     except urllib.error.URLError as exc:
         raise FeedError(f"{exc.reason} fetching {url}") from exc
     except (OSError, ValueError) as exc:
         raise FeedError(f"{exc} fetching {url}") from exc
+    if limit is not None and len(data) > limit:
+        raise FeedError(f"more than {limit:,} bytes fetching {url}")
+    return data, content_type
 
 
 # --------------------------------------------------------------------------- HTML strip

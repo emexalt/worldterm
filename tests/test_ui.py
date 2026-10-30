@@ -4,13 +4,18 @@ import io
 import json
 import re
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from rich.console import Console
 from textual import events
 from textual.widgets import DataTable, OptionList, TextArea
 
+from worldterm.article import Block, Body, load as load_article
+from worldterm.feed import FeedError
 from worldterm.sources import Source
 from worldterm.ui.styles import SEVERITY_COLORS, darken
 from worldterm.ui.table import EventTable
@@ -670,3 +675,186 @@ class WeatherUITests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             self.assertIsInstance(app.screen, DashboardScreen)
             self.assertEqual(app.screen.page, "news")
+
+
+# ---------------------------------------------------------------- article text in the reader
+class FakeLoader:
+    """Stands in for article.load: records each URL; returns an article or raises *error*."""
+
+    def __init__(self, error: str | None = None, gate: threading.Event | None = None) -> None:
+        self.calls: list[str] = []
+        self.error = error          # a FeedError message; {url} is filled in
+        self.gate = gate            # when given, the download waits for it
+
+    def __call__(self, url: str) -> Body:
+        self.calls.append(url)
+        if self.gate is not None:
+            self.gate.wait(5)
+        if self.error is not None:
+            raise FeedError(self.error.format(url=url))
+        return Body((Block("p", "The full text, with [/b] and [brackets] in it."), Block("h", "A subheading"),
+                     Block("li", "first point"), Block("li", "second point"),
+                     Block("p", "The last paragraph.")), url)
+
+
+async def wait_until(pilot, condition, timeout: float = 5.0) -> None:
+    import asyncio
+    waited = 0.0
+    while not condition() and waited < timeout:
+        await asyncio.sleep(0.05)
+        waited += 0.05
+    await pilot.pause()
+    assert condition(), "timed out"
+
+
+class ReaderArticleTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.data_dir = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def make_app(self, loader=None, feeds=None, **kwargs) -> WorldTerm:
+        return WorldTerm(feeds or [FIXTURE], interval=600, data_dir=self.data_dir, weather="off",
+                         article_loader=loader, **kwargs)
+
+    async def open_reader(self, app, pilot) -> ReaderScreen:
+        await pilot.press("r")
+        await pilot.pause()
+        self.assertIsInstance(app.screen, ReaderScreen)
+        return app.screen
+
+    @staticmethod
+    def body(reader) -> str:
+        return str(reader.query_one("#body").renderable)
+
+    @staticmethod
+    def meta(reader) -> str:
+        return str(reader.query_one("#meta").renderable)
+
+    async def test_reader_shows_the_article_text(self):
+        gate = threading.Event()
+        loader = FakeLoader(gate=gate)
+        app = self.make_app(loader)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await wait_for_load(app, pilot)
+            reader = await self.open_reader(app, pilot)
+            link = reader.event.article.link
+            host = urlsplit(link).hostname
+            self.assertIn(f"Article:   fetching from {host}", self.meta(reader))
+            self.assertEqual(self.body(reader), reader.event.article.summary)   # until the page arrives
+            gate.set()
+            await wait_until(pilot, lambda: reader.article is not None)
+            self.assertEqual(loader.calls, [link])
+            self.assertEqual(self.body(reader), "The full text, with [/b] and [brackets] in it.\n\nA subheading\n\n"
+                                                "• first point\n• second point\n\nThe last paragraph.")
+            self.assertIn(f"Article:   {reader.article.words} words from {host}, extracted from the page", self.meta(reader))
+
+    async def test_a_failed_fetch_keeps_the_summary_and_is_tried_again(self):
+        loader = FakeLoader(error="HTTP 403 fetching {url}")
+        app = self.make_app(loader)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await wait_for_load(app, pilot)
+            reader = await self.open_reader(app, pilot)
+            await wait_until(pilot, lambda: "unavailable" in self.meta(reader))
+            self.assertIn("Article:   unavailable (HTTP 403); showing the feed's summary", self.meta(reader))
+            self.assertEqual(self.body(reader), reader.event.article.summary)
+            await pilot.press("escape")
+            reader = await self.open_reader(app, pilot)
+            await wait_until(pilot, lambda: len(loader.calls) == 2 and "unavailable" in self.meta(reader))
+
+    async def test_an_article_is_fetched_once_however_often_it_is_opened(self):
+        gate = threading.Event()
+        loader = FakeLoader(gate=gate)
+        app = self.make_app(loader)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await wait_for_load(app, pilot)
+            first = await self.open_reader(app, pilot)
+            link = first.event.article.link
+            await pilot.press("escape")      # closed while the page is still downloading
+            await pilot.pause()
+            self.assertIsInstance(app.screen, MainScreen)
+            # Textual detaches a popped screen in a task of its own; on a slow machine it can
+            # still be attached here, and the download would then (harmlessly) update it.
+            await wait_until(pilot, lambda: not first.is_attached)
+            second = await self.open_reader(app, pilot)   # asks again while the first fetch runs
+            gate.set()
+            await wait_until(pilot, lambda: second.article is not None)
+            self.assertIsNone(first.article, "a closed reader is left alone")
+            self.assertEqual(loader.calls, [link])
+            await pilot.press("escape")
+            third = await self.open_reader(app, pilot)
+            self.assertIsNotNone(third.article, "a cached article shows at once")
+            self.assertEqual(loader.calls, [link])
+
+    async def test_quitting_does_not_wait_for_a_download(self):
+        gate = threading.Event()
+        app = self.make_app(FakeLoader(gate=gate))
+        async with app.run_test(size=(120, 40)) as pilot:
+            await wait_for_load(app, pilot)
+            await self.open_reader(app, pilot)
+            await pilot.press("escape", "q")
+            quit_at = time.monotonic()
+        self.assertLess(time.monotonic() - quit_at, 2.0, "the download thread held up the exit")
+        gate.set()   # the download finishes after the app has gone; its report is dropped quietly
+        import asyncio
+        for thread in threading.enumerate():
+            if thread.name == "article":
+                await asyncio.to_thread(thread.join, 2)   # the thread reports through this loop
+                self.assertFalse(thread.is_alive())
+
+    async def test_weather_alerts_are_not_fetched(self):
+        loader = FakeLoader()
+        app = WorldTerm([FIXTURE], interval=600, data_dir=self.data_dir, weather_url=NWS_FIXTURE,
+                        article_loader=loader)
+        async with app.run_test(size=(140, 36)) as pilot:
+            await wait_for_weather(app, pilot)
+            await pilot.press("w")
+            await pilot.pause()
+            reader = await self.open_reader(app, pilot)
+            self.assertIn("TAKE COVER NOW", self.body(reader))
+            self.assertNotIn("Article:", str(reader.query_one("#meta").renderable))
+            await pilot.pause()
+            self.assertEqual(loader.calls, [])
+
+    async def test_without_a_loader_the_reader_shows_the_summary(self):
+        app = self.make_app(None)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await wait_for_load(app, pilot)
+            reader = await self.open_reader(app, pilot)
+            self.assertNotIn("Article:", self.meta(reader))
+            self.assertEqual(self.body(reader), reader.event.article.summary)
+
+    async def test_text_that_looks_like_markup_is_shown_as_it_is(self):
+        # DESIGN.md section 16: the reader used to parse feed text as markup, and "[/b]" crashed it.
+        app = self.make_app(None)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await wait_for_load(app, pilot)
+            ev = app.screen.current
+            ev.article.title = "Breaking [/b] news [video] from [bold]nowhere"
+            ev.article.summary = "A summary with [/i] and [red]colour[/red] in it"
+            ev.article.source = "Wire [x]"
+            reader = await self.open_reader(app, pilot)
+            self.assertEqual(str(reader.query_one("#title").renderable), ev.article.title)
+            self.assertEqual(self.body(reader), ev.article.summary)
+            self.assertIn("Wire [x]", str(reader.query_one("#bar").renderable))
+
+    async def test_a_local_page_end_to_end(self):
+        page = (Path(__file__).parent / "fixtures" / "articles" / "split_blocks.html").as_uri()
+        rss = self.data_dir / "local.xml"
+        rss.write_text(
+            '<?xml version="1.0"?><rss version="2.0"><channel><title>Local</title><item>'
+            f"<title>Rail collision: signal box recordings released</title><link>{page}</link>"
+            "<guid>local-1</guid><description>The feed's one-line summary.</description>"
+            "</item></channel></rss>", encoding="utf-8")
+        app = self.make_app(load_article, feeds=[rss.as_uri()])
+        async with app.run_test(size=(120, 40)) as pilot:
+            await wait_for_load(app, pilot)
+            reader = await self.open_reader(app, pilot)
+            await wait_until(pilot, lambda: reader.article is not None)
+            body = self.body(reader)
+            self.assertTrue(body.startswith("Recordings released on Thursday"))
+            self.assertIn("\n\nWhat the recordings show\n\n", body)
+            self.assertNotIn("Rescue workers", body)
+            self.assertIn("words from a local file", self.meta(reader))

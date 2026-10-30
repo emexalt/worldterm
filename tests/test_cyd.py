@@ -495,10 +495,48 @@ class ServiceTests(unittest.TestCase):
         svc.tick()     # the port does not exist: nothing happens, nothing is raised
         self.assertIsNone(svc.path)
 
+    def test_without_a_hello_wait_the_board_is_pinged_at_once(self):
+        clock = FakeClock()
+        port = FakePort(auto=True)
+        svc, log, _ = make_service(clock, {"ble:A4:F0:0F:5B:8B:2A": port}, hello_wait=0.0)
+        svc.tick()
+        self.assertEqual(log, [("connect", "ble:A4:F0:0F:5B:8B:2A")])
+        self.assertEqual(port.pings(), 1)
+        self.assertLess(clock.mono, 1000.0 + cyd.HELLO_WAIT)
+
+    def test_a_link_failure_with_a_hint_is_reported_once(self):
+        """A BLE link held by the desktop is something the user can fix: say so, once, and keep trying."""
+        from worldterm.bleport import LinkError, busy_hint
+        clock = FakeClock()
+        busy = LinkError(errno.EBUSY, "Device or resource busy", busy_hint("A4:F0:0F:5B:8B:2A"))
+        svc, log, opened = make_service(clock, {"ble:A4:F0:0F:5B:8B:2A": busy}, hello_wait=0.0)
+        for _ in range(3):
+            svc.tick()
+            clock.advance(cyd.RESCAN_SECONDS)
+        self.assertEqual(len(opened), 3, "it keeps trying")
+        self.assertEqual(log, [("error", busy.hint)])
+        self.assertIn("bluetoothctl disconnect A4:F0:0F:5B:8B:2A", busy.hint)
+
+    def test_service_for_ble(self):
+        self.assertIsNone(cyd.unavailable_reason("ble:A4:F0:0F:5B:8B:2A"))
+        self.assertIn("Bluetooth address", cyd.unavailable_reason("ble:nonsense"))
+        self.assertIsNone(cyd.service_for("ble:nonsense"))
+        svc = cyd.service_for("ble:a4:f0:0f:5b:8b:2a")
+        self.assertIsInstance(svc, CydService)
+        # Not ticked: that would start a real radio connection.
+        self.assertEqual(svc._scanner(), ["ble:A4:F0:0F:5B:8B:2A"])
+        self.assertEqual((svc._hello_wait, svc._write_gap, svc._rescan_seconds), (0.0, 0.0, cyd.BLE_RESCAN_SECONDS))
+        # The connect watches the service's own stop flag, so quitting cancels a connect in progress.
+        self.assertTrue(any(cell.cell_contents is svc._stop for cell in svc._open_port.__closure__))
+
     def test_command_line_default(self):
-        from main import build_parser
-        self.assertEqual(build_parser().parse_args([]).cyd, "auto")
-        self.assertEqual(build_parser().parse_args(["--cyd", "off"]).cyd, "off")
+        import main as entry
+        self.assertEqual(entry.build_parser().parse_args([]).cyd, "auto")
+        self.assertEqual(entry.build_parser().parse_args(["--cyd", "off"]).cyd, "off")
+        self.assertEqual(entry.build_parser().parse_args(["--cyd", "ble:A4:F0:0F:5B:8B:2A"]).cyd,
+                         "ble:A4:F0:0F:5B:8B:2A")
+        with self.assertRaises(SystemExit):
+            entry.main(["--cyd", "ble:not-an-address"])
 
 
 # ---------------------------------------------------------------------------- the app
